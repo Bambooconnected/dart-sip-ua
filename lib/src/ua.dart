@@ -598,6 +598,11 @@ class UA extends EventManager {
     if (request.ruri!.user != _configuration.uri!.user &&
         request.ruri!.user != _contact!.uri!.user) {
       logger.d('Request-URI does not point to us');
+      emit(EventSipRequestDropped(
+          method: method?.name,
+          reason: 'URI mismatch (ruri=${request.ruri!.user}, '
+              'expected=${_configuration.uri!.user})',
+          callId: request.call_id));
       if (request.method != SipMethod.ACK) {
         request.reply_sl(404);
       }
@@ -607,6 +612,10 @@ class UA extends EventManager {
 
     // Check request URI scheme.
     if (request.ruri!.scheme == DartSIP_C.SIPS) {
+      emit(EventSipRequestDropped(
+          method: method?.name,
+          reason: 'SIPS scheme not supported',
+          callId: request.call_id));
       request.reply_sl(416);
 
       return;
@@ -954,10 +963,16 @@ class UA extends EventManager {
     IncomingMessage? message = Parser.parseMessage(messageData, this);
 
     if (message == null) {
+      emit(EventSipRequestDropped(
+          method: 'unknown', reason: 'SIP parse failure'));
       return;
     }
 
     if (_status == UAStatus.userClosed && message is IncomingRequest) {
+      emit(EventSipRequestDropped(
+          method: message.method?.name,
+          reason: 'UA closed',
+          callId: message.call_id));
       return;
     }
 
@@ -965,10 +980,20 @@ class UA extends EventManager {
     if (!sanityCheck(message, this, transport)) {
       logger.w(
           'Incoming message did not pass sanity test, dumping it: \n\n $message');
+      if (message is IncomingRequest) {
+        emit(EventSipRequestDropped(
+            method: message.method?.name,
+            reason: 'sanity check failed',
+            callId: message.call_id));
+      }
       return;
     }
 
     if (message is IncomingRequest) {
+      emit(EventSipRequestReceived(
+          method: message.method?.name,
+          from: message.from?.uri?.toString(),
+          callId: message.call_id));
       message.transport = transport;
       receiveRequest(message);
     } else if (message is IncomingResponse) {
