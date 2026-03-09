@@ -19,10 +19,16 @@ class SIPUAWebSocketImpl {
   OnMessageCallback? onMessage;
   OnCloseCallback? onClose;
   final int messageDelay;
+
+  /// Message queue — replaced on each connect() to avoid the Dart
+  /// single-subscription stream re-listen restriction.
+  StreamController<dynamic>? _queue;
+  StreamSubscription<dynamic>? _queueSubscription;
+
   void connect(
       {Iterable<String>? protocols,
       required WebSocketSettings webSocketSettings}) async {
-    handleQueue();
+    _resetQueue();
     logger.i('connect $_url, ${webSocketSettings.extraHeaders}, $protocols');
     try {
       if (webSocketSettings.allowBadCertificate) {
@@ -44,20 +50,39 @@ class SIPUAWebSocketImpl {
     }
   }
 
-  final StreamController<dynamic> queue = StreamController<dynamic>.broadcast();
-  void handleQueue() async {
-    queue.stream.asyncMap((dynamic event) async {
-      await Future<void>.delayed(Duration(milliseconds: messageDelay));
-      return event;
-    }).listen((dynamic event) async {
-      _socket!.add(event);
-      logger.d('send: \n\n$event');
-    });
+  /// Creates a fresh single-subscription queue with error handling.
+  /// Safe to call on every connect() — the old queue/subscription is
+  /// cleaned up first.
+  void _resetQueue() {
+    _queueSubscription?.cancel();
+    _queue?.close();
+    _queue = StreamController<dynamic>();
+    _queueSubscription = _queue!.stream
+        .asyncMap((dynamic event) async {
+          await Future<void>.delayed(Duration(milliseconds: messageDelay));
+          return event;
+        })
+        .listen(
+          (dynamic event) {
+            try {
+              _socket!.add(event);
+              logger.d('send: \n\n$event');
+            } catch (e) {
+              logger.e('WebSocket send failed: $e');
+            }
+          },
+          onError: (dynamic error) {
+            logger.e('WebSocket queue error: $error');
+          },
+        );
   }
 
-  void send(dynamic data) async {
-    if (_socket != null) {
-      queue.add(data);
+  void send(dynamic data) {
+    if (_socket != null && _queue != null && !_queue!.isClosed) {
+      _queue!.add(data);
+    } else {
+      logger.e(
+          'WebSocket send dropped: socket=${_socket != null}, queue=${_queue != null}');
     }
   }
 
