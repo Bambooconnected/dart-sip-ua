@@ -824,10 +824,7 @@ class RTCSession extends EventManager implements Owner {
           // Send the BYE as soon as the ACK is received...
           receiveRequest = (IncomingMessage request) {
             if (request.method == SipMethod.ACK) {
-              sendRequest(
-                SipMethod.BYE,
-                <String, dynamic>{'extraHeaders': extraHeaders, 'body': body},
-              );
+              _sendByeWithTracking(extraHeaders, body);
               dialog.terminate();
             }
           };
@@ -837,10 +834,7 @@ class RTCSession extends EventManager implements Owner {
               (EventStateChanged state) {
             if (_request.server_transaction.state ==
                 TransactionState.TERMINATED) {
-              sendRequest(SipMethod.BYE, <String, dynamic>{
-                'extraHeaders': extraHeaders,
-                'body': body
-              });
+              _sendByeWithTracking(extraHeaders, body);
               dialog.terminate();
             }
           });
@@ -863,8 +857,7 @@ class RTCSession extends EventManager implements Owner {
           // Restore the dialog into 'ua' so the ACK can reach 'this' session.
           _ua.newDialog(dialog);
         } else {
-          sendRequest(SipMethod.BYE,
-              <String, dynamic>{'extraHeaders': extraHeaders, 'body': body});
+          _sendByeWithTracking(extraHeaders, body);
           reason_phrase = reason_phrase ?? 'Terminated by local';
           status_code = status_code ?? 200;
 
@@ -1294,6 +1287,75 @@ class RTCSession extends EventManager implements Owner {
     return _dialog!.sendRequest(method, options);
   }
 
+  /// Sends a SIP BYE with diagnostic event tracking.
+  ///
+  /// Emits [EventSipRequestSent] immediately after dispatching the BYE, and
+  /// emits [EventSipResponseReceived] when the outcome is known (response,
+  /// timeout, or transport error).
+  void _sendByeWithTracking(List<dynamic> extraHeaders, Object? body) {
+    final String? callId = _request.call_id;
+    final String? to = _remote_identity?.uri?.toString();
+
+    // Set up event handlers to track the BYE outcome.
+    EventManager byeHandlers = EventManager();
+
+    byeHandlers.on(EventOnSuccessResponse(),
+        (EventOnSuccessResponse event) {
+      _ua.emit(EventSipResponseReceived(
+        method: 'BYE',
+        statusCode: event.response?.status_code,
+        outcome: 'success',
+        callId: callId,
+      ));
+    });
+
+    byeHandlers.on(EventOnErrorResponse(), (EventOnErrorResponse event) {
+      _ua.emit(EventSipResponseReceived(
+        method: 'BYE',
+        statusCode: event.response?.status_code,
+        outcome: 'error',
+        callId: callId,
+      ));
+    });
+
+    byeHandlers.on(EventOnDialogError(), (EventOnDialogError event) {
+      _ua.emit(EventSipResponseReceived(
+        method: 'BYE',
+        statusCode: event.response?.status_code,
+        outcome: 'dialogError',
+        callId: callId,
+      ));
+    });
+
+    byeHandlers.on(EventOnRequestTimeout(), (EventOnRequestTimeout event) {
+      _ua.emit(EventSipResponseReceived(
+        method: 'BYE',
+        outcome: 'timeout',
+        callId: callId,
+      ));
+    });
+
+    byeHandlers.on(EventOnTransportError(), (EventOnTransportError event) {
+      _ua.emit(EventSipResponseReceived(
+        method: 'BYE',
+        outcome: 'transportError',
+        callId: callId,
+      ));
+    });
+
+    sendRequest(SipMethod.BYE, <String, dynamic>{
+      'extraHeaders': extraHeaders,
+      'body': body,
+      'eventHandlers': byeHandlers,
+    });
+
+    _ua.emit(EventSipRequestSent(
+      method: 'BYE',
+      to: to,
+      callId: callId,
+    ));
+  }
+
   /**
    * In dialog Request Reception
    */
@@ -1630,7 +1692,7 @@ class RTCSession extends EventManager implements Owner {
         logger.d('no ACK received, terminating the session');
 
         clearTimeout(_timers.invite2xxTimer);
-        sendRequest(SipMethod.BYE);
+        _sendByeWithTracking(<dynamic>[], null);
         _ended(
             Originator.remote,
             null,
@@ -2555,7 +2617,7 @@ class RTCSession extends EventManager implements Owner {
           return;
         }
         sendRequest(SipMethod.ACK);
-        sendRequest(SipMethod.BYE);
+        _sendByeWithTracking(<dynamic>[], null);
         return;
       }
     }

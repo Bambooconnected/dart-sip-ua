@@ -284,6 +284,28 @@ class SIPUAHelper extends EventManager {
         }
       });
 
+      // Diagnostic: log every raw SIP request received at transport level.
+      _ua!.on(EventSipRequestReceived(), (EventSipRequestReceived event) {
+        _notifySipRequestReceivedListeners(
+            event.method ?? 'unknown', event.from, event.callId);
+      });
+
+      _ua!.on(EventSipRequestDropped(), (EventSipRequestDropped event) {
+        _notifySipRequestDroppedListeners(
+            event.method ?? 'unknown', event.reason ?? 'unknown', event.callId);
+      });
+
+      // Diagnostic: log every outbound SIP request dispatched to the transport.
+      _ua!.on(EventSipRequestSent(), (EventSipRequestSent event) {
+        _notifySipRequestSentListeners(
+            event.method ?? 'unknown', event.to, event.callId);
+      });
+
+      _ua!.on(EventSipResponseReceived(), (EventSipResponseReceived event) {
+        _notifySipResponseReceivedListeners(event.method ?? 'unknown',
+            event.statusCode, event.outcome, event.callId);
+      });
+
       _ua!.start();
     } catch (e, s) {
       logger.e(e.toString(), error: e, stackTrace: s);
@@ -537,6 +559,38 @@ class SIPUAHelper extends EventManager {
       listener.onNewNotify(Notify(request: event.request));
     }
   }
+
+  void _notifySipRequestReceivedListeners(
+      String method, String? from, String? callId) {
+    List<SipUaHelperListener> listeners = _sipUaHelperListeners.toList();
+    for (SipUaHelperListener listener in listeners) {
+      listener.onSipRequestReceived(method, from, callId);
+    }
+  }
+
+  void _notifySipRequestDroppedListeners(
+      String method, String reason, String? callId) {
+    List<SipUaHelperListener> listeners = _sipUaHelperListeners.toList();
+    for (SipUaHelperListener listener in listeners) {
+      listener.onSipRequestDropped(method, reason, callId);
+    }
+  }
+
+  void _notifySipRequestSentListeners(
+      String method, String? to, String? callId) {
+    List<SipUaHelperListener> listeners = _sipUaHelperListeners.toList();
+    for (SipUaHelperListener listener in listeners) {
+      listener.onSipRequestSent(method, to, callId);
+    }
+  }
+
+  void _notifySipResponseReceivedListeners(
+      String method, int? statusCode, String? outcome, String? callId) {
+    List<SipUaHelperListener> listeners = _sipUaHelperListeners.toList();
+    for (SipUaHelperListener listener in listeners) {
+      listener.onSipResponseReceived(method, statusCode, outcome, callId);
+    }
+  }
 }
 
 enum CallStateEnum {
@@ -590,7 +644,7 @@ class Call {
     assert(_session != null, 'ERROR(hangup): rtc session is invalid!');
     if (peerConnection != null) {
       for (MediaStream? stream in peerConnection!.getLocalStreams()) {
-        if (stream == null) return;
+        if (stream == null) continue;
         logger.d(
             'Stopping local stream with tracks: ${stream.getTracks().length}');
         for (MediaStreamTrack track in stream.getTracks()) {
@@ -599,7 +653,7 @@ class Call {
         }
       }
       for (MediaStream? stream in peerConnection!.getRemoteStreams()) {
-        if (stream == null) return;
+        if (stream == null) continue;
         logger.d(
             'Stopping remote stream with tracks: ${stream.getTracks().length}');
         for (MediaStreamTrack track in stream.getTracks()) {
@@ -792,6 +846,24 @@ abstract class SipUaHelperListener {
   void onNewMessage(SIPMessageRequest msg);
   void onNewNotify(Notify ntf);
   void onNewReinvite(ReInvite event);
+
+  /// Called when any SIP request arrives at the transport level (before
+  /// routing). Override to add diagnostics. Default: no-op.
+  void onSipRequestReceived(String method, String? from, String? callId) {}
+
+  /// Called when a SIP request is dropped before reaching the app (parse
+  /// failure, URI mismatch, sanity check, etc.). Default: no-op.
+  void onSipRequestDropped(String method, String reason, String? callId) {}
+
+  /// Called when an outbound SIP request (e.g. BYE) is dispatched to the
+  /// transport. Default: no-op.
+  void onSipRequestSent(String method, String? to, String? callId) {}
+
+  /// Called when a response (or timeout/error) is received for an outbound SIP
+  /// request. [outcome] is one of: 'success', 'error', 'dialogError',
+  /// 'timeout', 'transportError'. Default: no-op.
+  void onSipResponseReceived(
+      String method, int? statusCode, String? outcome, String? callId) {}
 }
 
 class Notify {

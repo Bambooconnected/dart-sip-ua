@@ -17,3 +17,43 @@ class EventSocketDisconnected extends EventType {
   SIPUASocketInterface? socket;
   ErrorCause? cause;
 }
+
+/// Emitted whenever the UA receives an incoming SIP request over the
+/// transport (before any routing / drop logic). Useful for diagnostics —
+/// proves the message reached the app from the network.
+class EventSipRequestReceived extends EventType {
+  EventSipRequestReceived({this.method, this.from, this.callId});
+  String? method;
+  String? from;
+  String? callId;
+}
+
+/// Emitted when the UA drops an incoming SIP request (e.g. wrong URI,
+/// sanity-check failure, parse error). Diagnostics only.
+class EventSipRequestDropped extends EventType {
+  EventSipRequestDropped({this.method, this.reason, this.callId});
+  String? method;
+  String? reason;
+  String? callId;
+}
+
+/// Emitted when an outbound SIP request (e.g. BYE) is dispatched to the
+/// transport. Proves the message left the app toward the network.
+class EventSipRequestSent extends EventType {
+  EventSipRequestSent({this.method, this.to, this.callId});
+  String? method;
+  String? to;
+  String? callId;
+}
+
+/// Emitted when we receive a response (or timeout/error) for an outbound SIP
+/// request. [outcome] is one of: 'success', 'error', 'dialogError', 'timeout',
+/// 'transportError'.
+class EventSipResponseReceived extends EventType {
+  EventSipResponseReceived(
+      {this.method, this.statusCode, this.outcome, this.callId});
+  String? method;
+  int? statusCode;
+  String? outcome;
+  String? callId;
+}
