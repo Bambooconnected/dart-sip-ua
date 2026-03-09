@@ -642,6 +642,16 @@ class Call {
 
   void hangup([Map<String, dynamic>? options]) {
     assert(_session != null, 'ERROR(hangup): rtc session is invalid!');
+
+    // Send the SIP BYE first, before stopping media tracks. This ensures
+    // the BYE is dispatched to the transport while the connection is still
+    // healthy. Stopping tracks first would cause the remote side to start
+    // its RTP timeout clock immediately, leaving zero tolerance for any
+    // BYE delivery delay.
+    if (state != CallStateEnum.ENDED) {
+      _session.terminate(options);
+    }
+
     if (peerConnection != null) {
       for (MediaStream? stream in peerConnection!.getLocalStreams()) {
         if (stream == null) continue;
@@ -664,9 +674,6 @@ class Call {
     } else {
       logger.d("peerConnection is null, can't stop tracks.");
     }
-
-    if (state == CallStateEnum.ENDED) return;
-    _session.terminate(options);
   }
 
   void hold() {
