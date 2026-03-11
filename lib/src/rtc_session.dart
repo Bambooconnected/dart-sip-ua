@@ -1718,6 +1718,12 @@ class RTCSession extends EventManager implements Owner {
       Map<String, dynamic> rtcConstraints) async {
     _connection = await createPeerConnection(pcConfig, rtcConstraints);
     _connection!.onIceConnectionState = (RTCIceConnectionState state) {
+      // Bubble ICE state to the app for diagnostics.
+      _ua.emit(EventIceConnectionState(
+        state: state.name,
+        callId: _id,
+      ));
+
       if (_state == RtcSessionState.terminated ||
           _state == RtcSessionState.canceled) {
         logger.d(

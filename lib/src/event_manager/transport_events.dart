@@ -57,3 +57,11 @@ class EventSipResponseReceived extends EventType {
   String? outcome;
   String? callId;
 }
+
+/// Emitted when the ICE connection state changes on an active RTCSession.
+/// Diagnostics only — helps trace ICE negotiation failures.
+class EventIceConnectionState extends EventType {
+  EventIceConnectionState({this.state, this.callId});
+  String? state;
+  String? callId;
+}

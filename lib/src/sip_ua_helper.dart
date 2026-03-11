@@ -306,6 +306,11 @@ class SIPUAHelper extends EventManager {
             event.statusCode, event.outcome, event.callId);
       });
 
+      _ua!.on(EventIceConnectionState(), (EventIceConnectionState event) {
+        _notifyIceConnectionStateListeners(
+            event.state ?? 'unknown', event.callId);
+      });
+
       _ua!.start();
     } catch (e, s) {
       logger.e(e.toString(), error: e, stackTrace: s);
@@ -591,6 +596,13 @@ class SIPUAHelper extends EventManager {
       listener.onSipResponseReceived(method, statusCode, outcome, callId);
     }
   }
+
+  void _notifyIceConnectionStateListeners(String state, String? callId) {
+    List<SipUaHelperListener> listeners = _sipUaHelperListeners.toList();
+    for (SipUaHelperListener listener in listeners) {
+      listener.onIceConnectionStateChanged(state, callId);
+    }
+  }
 }
 
 enum CallStateEnum {
@@ -871,6 +883,10 @@ abstract class SipUaHelperListener {
   /// 'timeout', 'transportError'. Default: no-op.
   void onSipResponseReceived(
       String method, int? statusCode, String? outcome, String? callId) {}
+
+  /// Called when the ICE connection state changes on an active call's
+  /// RTCPeerConnection. Diagnostics only. Default: no-op.
+  void onIceConnectionStateChanged(String state, String? callId) {}
 }
 
 class Notify {
