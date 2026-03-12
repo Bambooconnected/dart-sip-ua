@@ -477,6 +477,15 @@ class SIPUAHelper extends EventManager {
     return defaultOptions;
   }
 
+  void updateIceServers(List<Map<String, String>> iceServers) {
+    if (_uaSettings != null) {
+      _uaSettings!.iceServers = iceServers;
+      logger.d('updateIceServers: updated ${iceServers.length} server(s)');
+    } else {
+      logger.w('updateIceServers: _uaSettings is null (not started yet)');
+    }
+  }
+
   bool setUAParam(String parameter, dynamic value) {
     return _ua!.set(parameter, value);
   }
