@@ -65,3 +65,27 @@ class EventIceConnectionState extends EventType {
   String? state;
   String? callId;
 }
+
+/// Emitted when the ICE gathering state changes (new → gathering → complete).
+/// Diagnostics only — helps trace whether candidates are being gathered.
+class EventIceGatheringState extends EventType {
+  EventIceGatheringState({this.state, this.callId});
+  String? state;
+  String? callId;
+}
+
+/// Emitted when an ICE candidate is discovered. Carries the raw SDP candidate
+/// string for diagnostics (candidate type, transport). Named differently from
+/// the internal [EventIceCandidate] which carries the full RTCIceCandidate
+/// object + ready callback.
+class EventIceCandidateDiagnostic extends EventType {
+  EventIceCandidateDiagnostic({this.candidate, this.callId});
+  String? candidate;
+  String? callId;
+}
+
+/// Emitted when an ICE restart is attempted after a prolonged disconnect.
+class EventIceRestart extends EventType {
+  EventIceRestart({this.callId});
+  String? callId;
+}

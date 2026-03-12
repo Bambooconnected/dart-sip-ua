@@ -1754,6 +1754,7 @@ class RTCSession extends EventManager implements Owner {
                 !_isAttemptingIceRestart) {
               logger.i('Attempting ICE restart after timeout...');
               _isAttemptingIceRestart = true;
+              _ua.emit(EventIceRestart(callId: _id));
               _iceRestart();
             } else {
               logger.i('ICE restart aborted (state changed during timer).');
@@ -1897,6 +1898,7 @@ class RTCSession extends EventManager implements Owner {
     }
 
     _connection!.onIceGatheringState = (RTCIceGatheringState state) {
+      _ua.emit(EventIceGatheringState(state: state.name, callId: _id));
       _iceGatheringState = state;
       if (state == RTCIceGatheringState.RTCIceGatheringStateComplete) {
         ready();
@@ -1906,6 +1908,8 @@ class RTCSession extends EventManager implements Owner {
     bool hasCandidate = false;
     _connection!.onIceCandidate = (RTCIceCandidate candidate) {
       if (candidate != null) {
+        _ua.emit(EventIceCandidateDiagnostic(
+            candidate: candidate.candidate, callId: _id));
         emit(EventIceCandidate(candidate, ready));
         if (!hasCandidate) {
           hasCandidate = true;

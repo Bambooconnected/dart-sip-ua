@@ -311,6 +311,21 @@ class SIPUAHelper extends EventManager {
             event.state ?? 'unknown', event.callId);
       });
 
+      _ua!.on(EventIceGatheringState(), (EventIceGatheringState event) {
+        _notifyIceGatheringStateListeners(
+            event.state ?? 'unknown', event.callId);
+      });
+
+      _ua!.on(EventIceCandidateDiagnostic(),
+          (EventIceCandidateDiagnostic event) {
+        _notifyIceCandidateDiagnosticListeners(
+            event.candidate ?? '', event.callId);
+      });
+
+      _ua!.on(EventIceRestart(), (EventIceRestart event) {
+        _notifyIceRestartListeners(event.callId);
+      });
+
       _ua!.start();
     } catch (e, s) {
       logger.e(e.toString(), error: e, stackTrace: s);
@@ -603,6 +618,28 @@ class SIPUAHelper extends EventManager {
       listener.onIceConnectionStateChanged(state, callId);
     }
   }
+
+  void _notifyIceGatheringStateListeners(String state, String? callId) {
+    List<SipUaHelperListener> listeners = _sipUaHelperListeners.toList();
+    for (SipUaHelperListener listener in listeners) {
+      listener.onIceGatheringStateChanged(state, callId);
+    }
+  }
+
+  void _notifyIceCandidateDiagnosticListeners(
+      String candidate, String? callId) {
+    List<SipUaHelperListener> listeners = _sipUaHelperListeners.toList();
+    for (SipUaHelperListener listener in listeners) {
+      listener.onIceCandidateDiscovered(candidate, callId);
+    }
+  }
+
+  void _notifyIceRestartListeners(String? callId) {
+    List<SipUaHelperListener> listeners = _sipUaHelperListeners.toList();
+    for (SipUaHelperListener listener in listeners) {
+      listener.onIceRestart(callId);
+    }
+  }
 }
 
 enum CallStateEnum {
@@ -887,6 +924,18 @@ abstract class SipUaHelperListener {
   /// Called when the ICE connection state changes on an active call's
   /// RTCPeerConnection. Diagnostics only. Default: no-op.
   void onIceConnectionStateChanged(String state, String? callId) {}
+
+  /// Called when the ICE gathering state changes (new → gathering → complete).
+  /// Diagnostics only. Default: no-op.
+  void onIceGatheringStateChanged(String state, String? callId) {}
+
+  /// Called when an ICE candidate is discovered. [candidate] is the raw SDP
+  /// candidate string. Diagnostics only. Default: no-op.
+  void onIceCandidateDiscovered(String candidate, String? callId) {}
+
+  /// Called when an ICE restart is attempted after a prolonged disconnect.
+  /// Diagnostics only. Default: no-op.
+  void onIceRestart(String? callId) {}
 }
 
 class Notify {
