@@ -960,6 +960,22 @@ class UA extends EventManager {
 
 // Transport data event.
   void onTransportData(SocketTransport transport, String messageData) {
+    // Diagnostic: first line of the raw frame tells us request method vs.
+    // response status without re-parsing. Caps the payload so log volume
+    // stays bounded.
+    final String firstLine =
+        messageData.split('\r\n').first.split('\n').first.trim();
+    emit(EventTimingMark(
+      tag: 'ws.message',
+      data: <String, dynamic>{
+        'firstLine': firstLine.length > 96
+            ? '${firstLine.substring(0, 96)}…'
+            : firstLine,
+        'bytes': messageData.length,
+        'wallMs': DateTime.now().millisecondsSinceEpoch,
+      },
+    ));
+
     IncomingMessage? message = Parser.parseMessage(messageData, this);
 
     if (message == null) {

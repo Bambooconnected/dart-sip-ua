@@ -45,7 +45,23 @@ class InviteClientTransaction extends TransactionBase {
       timer_B();
     }, Timers.TIMER_B);
 
-    if (!transport!.send(request)) {
+    ua.emit(EventTimingMark(
+      tag: 'invite.tx.about_to_send',
+      data: <String, dynamic>{
+        'wallMs': DateTime.now().millisecondsSinceEpoch,
+      },
+      callId: request.getHeader('call-id'),
+    ));
+    final bool ok = transport!.send(request);
+    ua.emit(EventTimingMark(
+      tag: 'invite.tx.sent',
+      data: <String, dynamic>{
+        'ok': ok,
+        'wallMs': DateTime.now().millisecondsSinceEpoch,
+      },
+      callId: request.getHeader('call-id'),
+    ));
+    if (!ok) {
       onTransportError();
     }
   }

@@ -1717,6 +1717,23 @@ class RTCSession extends EventManager implements Owner {
   Future<void> _createRTCConnection(Map<String, dynamic> pcConfig,
       Map<String, dynamic> rtcConstraints) async {
     _connection = await createPeerConnection(pcConfig, rtcConstraints);
+    _ua.emit(EventTimingMark(
+      tag: 'pc.created',
+      data: <String, dynamic>{
+        'wallMs': DateTime.now().millisecondsSinceEpoch,
+      },
+      callId: _id,
+    ));
+    _connection!.onSignalingState = (RTCSignalingState state) {
+      _ua.emit(EventTimingMark(
+        tag: 'pc.signaling_state',
+        data: <String, dynamic>{
+          'state': state.name,
+          'wallMs': DateTime.now().millisecondsSinceEpoch,
+        },
+        callId: _id,
+      ));
+    };
     _connection!.onIceConnectionState = (RTCIceConnectionState state) {
       // Bubble ICE state to the app for diagnostics.
       _ua.emit(EventIceConnectionState(
@@ -1856,7 +1873,22 @@ class RTCSession extends EventManager implements Owner {
     late RTCSessionDescription desc;
     if (type == SdpType.offer) {
       try {
+        _ua.emit(EventTimingMark(
+          tag: 'sdp.create_offer.start',
+          data: <String, dynamic>{
+            'wallMs': DateTime.now().millisecondsSinceEpoch,
+          },
+          callId: _id,
+        ));
         desc = await _connection!.createOffer(constraints);
+        _ua.emit(EventTimingMark(
+          tag: 'sdp.create_offer.done',
+          data: <String, dynamic>{
+            'sdpLength': desc.sdp?.length ?? 0,
+            'wallMs': DateTime.now().millisecondsSinceEpoch,
+          },
+          callId: _id,
+        ));
       } catch (error) {
         logger.e(
             'emit "peerconnection:createofferfailed" [error:${error.toString()}]');
@@ -1899,8 +1931,23 @@ class RTCSession extends EventManager implements Owner {
 
     _connection!.onIceGatheringState = (RTCIceGatheringState state) {
       _ua.emit(EventIceGatheringState(state: state.name, callId: _id));
+      _ua.emit(EventTimingMark(
+        tag: 'ice.gathering.state',
+        data: <String, dynamic>{
+          'state': state.name,
+          'wallMs': DateTime.now().millisecondsSinceEpoch,
+        },
+        callId: _id,
+      ));
       _iceGatheringState = state;
       if (state == RTCIceGatheringState.RTCIceGatheringStateComplete) {
+        _ua.emit(EventTimingMark(
+          tag: 'ice.gathering.complete',
+          data: <String, dynamic>{
+            'wallMs': DateTime.now().millisecondsSinceEpoch,
+          },
+          callId: _id,
+        ));
         ready();
       }
     };
@@ -1927,7 +1974,24 @@ class RTCSession extends EventManager implements Owner {
     };
 
     try {
+      _ua.emit(EventTimingMark(
+        tag: 'sdp.set_local.start',
+        data: <String, dynamic>{
+          'type': type.name,
+          'wallMs': DateTime.now().millisecondsSinceEpoch,
+        },
+        callId: _id,
+      ));
       await _connection!.setLocalDescription(desc);
+      _ua.emit(EventTimingMark(
+        tag: 'sdp.set_local.done',
+        data: <String, dynamic>{
+          'type': type.name,
+          'signalingState': _connection?.signalingState?.name,
+          'wallMs': DateTime.now().millisecondsSinceEpoch,
+        },
+        callId: _id,
+      ));
     } catch (error) {
       _rtcReady = true;
       logger.e(
@@ -2603,6 +2667,16 @@ class RTCSession extends EventManager implements Owner {
       logger.d('No response received');
       return;
     }
+    _ua.emit(EventTimingMark(
+      tag: 'invite.response.received',
+      data: <String, dynamic>{
+        'statusCode': response.status_code,
+        'reasonPhrase': response.reason_phrase,
+        'bodyLength': response.body?.length ?? 0,
+        'wallMs': DateTime.now().millisecondsSinceEpoch,
+      },
+      callId: _id,
+    ));
     response.sdp = sdp_transform.parse(response.body ?? '');
 
     /// Handle 2XX retransmissions and responses from forked requests.
@@ -2684,8 +2758,38 @@ class RTCSession extends EventManager implements Owner {
       RTCSessionDescription answer =
           RTCSessionDescription(response.body, SdpType.answer.name);
 
+      _ua.emit(EventTimingMark(
+        tag: 'sdp.answer.extracted.1xx',
+        data: <String, dynamic>{
+          'statusCode': response.status_code,
+          'bodyLength': response.body?.length ?? 0,
+          'wallMs': DateTime.now().millisecondsSinceEpoch,
+        },
+        callId: _id,
+      ));
+
       try {
+        _ua.emit(EventTimingMark(
+          tag: 'sdp.set_remote.start',
+          data: <String, dynamic>{
+            'context': '1xx',
+            'statusCode': response.status_code,
+            'signalingState': _connection?.signalingState?.name,
+            'iceGatheringState': _iceGatheringState?.name,
+            'wallMs': DateTime.now().millisecondsSinceEpoch,
+          },
+          callId: _id,
+        ));
         await _connection!.setRemoteDescription(answer);
+        _ua.emit(EventTimingMark(
+          tag: 'sdp.set_remote.done',
+          data: <String, dynamic>{
+            'context': '1xx',
+            'signalingState': _connection?.signalingState?.name,
+            'wallMs': DateTime.now().millisecondsSinceEpoch,
+          },
+          callId: _id,
+        ));
       } catch (error) {
         logger.e(
             'emit "peerconnection:setremotedescriptionfailed" [error:${error.toString()}]');
@@ -2748,12 +2852,72 @@ class RTCSession extends EventManager implements Owner {
         }
       }
 
+      _ua.emit(EventTimingMark(
+        tag: 'sdp.answer.extracted.2xx',
+        data: <String, dynamic>{
+          'statusCode': response.status_code,
+          'bodyLength': response.body?.length ?? 0,
+          'wallMs': DateTime.now().millisecondsSinceEpoch,
+        },
+        callId: _id,
+      ));
+
       try {
+        _ua.emit(EventTimingMark(
+          tag: 'sdp.set_remote.start',
+          data: <String, dynamic>{
+            'context': '2xx',
+            'statusCode': response.status_code,
+            'signalingState': _connection?.signalingState?.name,
+            'iceGatheringState': _iceGatheringState?.name,
+            'wallMs': DateTime.now().millisecondsSinceEpoch,
+          },
+          callId: _id,
+        ));
         await _connection!.setRemoteDescription(answer);
+        _ua.emit(EventTimingMark(
+          tag: 'sdp.set_remote.done',
+          data: <String, dynamic>{
+            'context': '2xx',
+            'signalingState': _connection?.signalingState?.name,
+            'wallMs': DateTime.now().millisecondsSinceEpoch,
+          },
+          callId: _id,
+        ));
         // Handle Session Timers.
         _handleSessionTimersInIncomingResponse(response);
+        _ua.emit(EventTimingMark(
+          tag: 'session_timers.handled',
+          data: <String, dynamic>{
+            'wallMs': DateTime.now().millisecondsSinceEpoch,
+          },
+          callId: _id,
+        ));
+        _ua.emit(EventTimingMark(
+          tag: '_accepted.emit',
+          data: <String, dynamic>{
+            'originator': 'remote',
+            'wallMs': DateTime.now().millisecondsSinceEpoch,
+          },
+          callId: _id,
+        ));
         _accepted(Originator.remote, response);
         OutgoingRequest ack = sendRequest(SipMethod.ACK);
+        _ua.emit(EventTimingMark(
+          tag: 'ack.sent',
+          data: <String, dynamic>{
+            'wallMs': DateTime.now().millisecondsSinceEpoch,
+          },
+          callId: _id,
+        ));
+        _ua.emit(EventTimingMark(
+          tag: '_confirmed.emit',
+          data: <String, dynamic>{
+            'originator': 'local',
+            'wallMs': DateTime.now().millisecondsSinceEpoch,
+          },
+          callId: _id,
+        ));
         _confirmed(Originator.local, ack);
       } catch (error) {
         _acceptAndTerminate(response, 488, 'Not Acceptable Here');

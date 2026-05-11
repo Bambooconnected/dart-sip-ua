@@ -326,6 +326,11 @@ class SIPUAHelper extends EventManager {
         _notifyIceRestartListeners(event.callId);
       });
 
+      _ua!.on(EventTimingMark(tag: '', data: const <String, dynamic>{}),
+          (EventTimingMark event) {
+        _notifyTimingMarkListeners(event.tag, event.data, event.callId);
+      });
+
       _ua!.start();
     } catch (e, s) {
       logger.e(e.toString(), error: e, stackTrace: s);
@@ -649,6 +654,14 @@ class SIPUAHelper extends EventManager {
       listener.onIceRestart(callId);
     }
   }
+
+  void _notifyTimingMarkListeners(
+      String tag, Map<String, dynamic> data, String? callId) {
+    List<SipUaHelperListener> listeners = _sipUaHelperListeners.toList();
+    for (SipUaHelperListener listener in listeners) {
+      listener.onTimingMark(tag, data, callId);
+    }
+  }
 }
 
 enum CallStateEnum {
@@ -945,6 +958,14 @@ abstract class SipUaHelperListener {
   /// Called when an ICE restart is attempted after a prolonged disconnect.
   /// Diagnostics only. Default: no-op.
   void onIceRestart(String? callId) {}
+
+  /// Called for fine-grained call-setup timing checkpoints (PC creation, SDP
+  /// create/set, INVITE serialization, WebSocket send/receive, SDP answer
+  /// apply, ACCEPTED/CONFIRMED emit). [data] always contains `wallMs` and may
+  /// include `statusCode`, `signalingState`, `iceGatheringState`, etc.
+  /// Diagnostics only. Default: no-op.
+  void onTimingMark(
+      String tag, Map<String, dynamic> data, String? callId) {}
 }
 
 class Notify {

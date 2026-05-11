@@ -89,3 +89,18 @@ class EventIceRestart extends EventType {
   EventIceRestart({this.callId});
   String? callId;
 }
+
+/// Free-form diagnostic timing mark — emitted at fine-grained call-setup
+/// checkpoints (peer-connection lifecycle, SDP create/set, INVITE serialization,
+/// WebSocket send/receive, SDP answer apply, ACCEPTED/CONFIRMED emit). The
+/// host app correlates [data] with its own timeline to pinpoint stalls.
+///
+/// [tag] is a stable identifier like `sdp.set_remote.start`; [data] always
+/// includes `wallMs` and may include `statusCode`, `signalingState`,
+/// `iceGatheringState`, `bodyLength`, etc.
+class EventTimingMark extends EventType {
+  EventTimingMark({required this.tag, required this.data, this.callId});
+  String tag;
+  Map<String, dynamic> data;
+  String? callId;
+}
