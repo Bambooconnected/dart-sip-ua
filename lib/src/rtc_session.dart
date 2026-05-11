@@ -1952,24 +1952,78 @@ class RTCSession extends EventManager implements Owner {
       }
     };
 
+    // Adaptive ICE-gathering completion. SIP has no trickle-ICE, so we have
+    // to commit a candidate set in the SDP offer before sending INVITE. Rather
+    // than waiting a fixed window after the first candidate (which costs ~2 s
+    // on every call), we complete as soon as we have a candidate set that
+    // works in every NAT scenario:
+    //
+    //   1. srflx + relay both gathered → fire immediately (covers cone NAT
+    //      via srflx + symmetric NAT via relay)
+    //   2. relay alone → tail-wait up to [relayTailMs] for srflx, then fire
+    //   3. neither srflx nor relay → fall back to [ice_gathering_timeout] as
+    //      the absolute ceiling (current behaviour, kept for slow networks)
     bool hasCandidate = false;
+    bool hasSrflx = false;
+    bool hasRelay = false;
+    Timer? ceilingTimer;
+    Timer? relayTailTimer;
+    const int relayTailMs = 500;
+    bool fired = false;
+
+    void completeEarly(String reason) {
+      if (fired) return;
+      fired = true;
+      ceilingTimer?.cancel();
+      relayTailTimer?.cancel();
+      _ua.emit(EventTimingMark(
+        tag: 'ice.early_complete',
+        data: <String, dynamic>{
+          'reason': reason,
+          'hasSrflx': hasSrflx,
+          'hasRelay': hasRelay,
+          'wallMs': DateTime.now().millisecondsSinceEpoch,
+        },
+        callId: _id,
+      ));
+      ready();
+    }
+
     _connection!.onIceCandidate = (RTCIceCandidate candidate) {
-      if (candidate != null) {
-        _ua.emit(EventIceCandidateDiagnostic(
-            candidate: candidate.candidate, callId: _id));
-        emit(EventIceCandidate(candidate, ready));
-        if (!hasCandidate) {
-          hasCandidate = true;
-          /**
-           *  Just wait for 0.5 seconds. In the case of multiple network connections,
-           *  the RTCIceGatheringStateComplete event needs to wait for 10 ~ 30 seconds.
-           *  Because trickle ICE is not defined in the sip protocol, the delay of
-           * initiating a call to answer the call waiting will be unacceptable.
-           */
-          if (ua.configuration.ice_gathering_timeout != 0) {
-            setTimeout(() => ready(), ua.configuration.ice_gathering_timeout);
-          }
+      if (candidate == null) return;
+      _ua.emit(EventIceCandidateDiagnostic(
+          candidate: candidate.candidate, callId: _id));
+      emit(EventIceCandidate(candidate, ready));
+
+      final String c = candidate.candidate ?? '';
+      final String? type = RegExp(r'typ (\w+)').firstMatch(c)?.group(1);
+
+      if (!hasCandidate) {
+        hasCandidate = true;
+        // Rule 3 ceiling — fires only if neither srflx nor relay arrives in
+        // time. Honors the existing [ice_gathering_timeout] config knob.
+        if (ua.configuration.ice_gathering_timeout != 0) {
+          ceilingTimer = setTimeout(
+            () => completeEarly('ceiling'),
+            ua.configuration.ice_gathering_timeout,
+          );
         }
+      }
+
+      if (type == 'srflx' && !hasSrflx) hasSrflx = true;
+      if (type == 'relay' && !hasRelay) {
+        hasRelay = true;
+        // Rule 2 tail — short window for srflx to also land.
+        relayTailTimer = setTimeout(
+          () => completeEarly('relay_tail'),
+          relayTailMs,
+        );
+      }
+
+      // Rule 1 fast path — both candidate types in hand, no NAT scenario left
+      // unaddressed.
+      if (hasSrflx && hasRelay) {
+        completeEarly('both_seen');
       }
     };
 
